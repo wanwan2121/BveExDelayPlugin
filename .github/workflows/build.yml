@@ -5,19 +5,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build x86
-        run: |
-          cmake -S . -B build32 -A Win32
-          cmake --build build32 --config Release
-      - name: Build x64
-        run: |
-          cmake -S . -B build64 -A x64
-          cmake --build build64 --config Release
+      - name: Build
+        run: dotnet build BveDelayEx.csproj -c Release
       - uses: actions/upload-artifact@v4
         with:
-          name: BveDelayPlugin-x86
-          path: build32/Release/BveDelayPlugin.dll
-      - uses: actions/upload-artifact@v4
-        with:
-          name: BveDelayPlugin-x64
-          path: build64/Release/BveDelayPlugin.dll
+          name: BveDelayEx
+          path: |
+            bin/Release/net48/BveDelayEx.dll
+            bin/Release/net48/crack.png
