@@ -7,7 +7,6 @@
     <Deterministic>true</Deterministic>
     <Title>BveEX 拡張機能：ランダム遅延・事故プラグイン</Title>
     <Description>ランダムな駅で事故・遅延を発生させます。</Description>
-    <Company></Company>
     <Product>BveDelayEx</Product>
     <Version>1.0.0</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
@@ -15,7 +14,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- BveEX 本体は BVE 側が持っているので、参照だけして出力には含めない (ExcludeAssets="runtime") -->
     <PackageReference Include="BveEx.PluginHost" Version="2.1.0" ExcludeAssets="runtime" />
     <PackageReference Include="BveEx.CoreExtensions" Version="2.0.8" ExcludeAssets="runtime" />
     <PackageReference Include="SlimDX" Version="4.0.13.44" ExcludeAssets="runtime" />
@@ -27,7 +25,6 @@
 
   <ItemGroup>
     <None Include="crack.png" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="BveDelayEx.ini" CopyToOutputDirectory="PreserveNewest" Condition="Exists('BveDelayEx.ini')" />
   </ItemGroup>
 
 </Project>
