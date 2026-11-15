@@ -46,10 +46,16 @@ namespace BveDelayEx
         private readonly DelaySettings Settings;
         private readonly Random Rng = new Random();
 
-        private readonly INative Native;
         private readonly SettingsForm Form;
-        private readonly ToolStripMenuItem EnableItem;
-        private readonly ToolStripMenuItem SettingsItem;
+
+        // 他の拡張機能（INative など）は、全ての拡張機能の読み込みが終わるまで取得できない。
+        // そのためコンストラクターでは取得せず、EnsureInitialized() で後から取得する。
+        private INative Native;
+        private ToolStripMenuItem EnableItem;
+        private ToolStripMenuItem SettingsItem;
+        private bool Initialized;
+        private bool ScenarioEventSubscribed;
+        private object KnownScenarioSource;
 
         private readonly Sound[] AnnounceSounds = new Sound[Incidents.All.Length];
         private Sound ResumeSound;
@@ -69,44 +75,74 @@ namespace BveDelayEx
             SettingsPath = Path.Combine(PluginDirectory, "BveDelayEx.ini");
             Settings = DelaySettings.Load(SettingsPath);
 
-            Native = Extensions.GetExtension<INative>();
-            Native.Started += OnStarted;
-            BveHacker.ScenarioCreated += OnScenarioCreated;
-
             Form = new SettingsForm(Settings);
             Form.Applied += OnSettingsApplied;
             Form.FormClosing += OnFormClosing;
 
-            IContextMenuHacker contextMenuHacker = Extensions.GetExtension<IContextMenuHacker>();
-            EnableItem = contextMenuHacker.AddCheckableMenuItem("遅延・事故の発生を有効にする", OnEnableChanged, ContextMenuItemType.Plugins);
-            SettingsItem = contextMenuHacker.AddCheckableMenuItem("遅延・事故の設定ウィンドウを表示", OnSettingsItemChanged, ContextMenuItemType.Plugins);
-
-            SuppressMenuEvents = true;
-            EnableItem.Checked = Settings.Enabled;
-            SettingsItem.Checked = false;
-            SuppressMenuEvents = false;
-
-            if (BveHacker.IsScenarioCreated)
+            try
             {
-                PrepareScenario(BveHacker.Scenario);
-                Replan();
+                BveHacker.ScenarioCreated += OnScenarioCreated;
+                ScenarioEventSubscribed = true;
+            }
+            catch (Exception)
+            {
+                // まだ使えない場合は、Tick で様子を見ながら初期化する
+            }
+        }
+
+        /// <summary>
+        /// 他の拡張機能を取得して、メニューなどを用意する。準備が整っていなければ何もせず、次の機会に再挑戦する。
+        /// </summary>
+        private void EnsureInitialized()
+        {
+            if (Initialized) return;
+
+            try
+            {
+                INative native = Extensions.GetExtension<INative>();
+                IContextMenuHacker contextMenuHacker = Extensions.GetExtension<IContextMenuHacker>();
+
+                native.Started += OnStarted;
+                Native = native;
+
+                EnableItem = contextMenuHacker.AddCheckableMenuItem("遅延・事故の発生を有効にする", OnEnableChanged, ContextMenuItemType.Plugins);
+                SettingsItem = contextMenuHacker.AddCheckableMenuItem("遅延・事故の設定ウィンドウを表示", OnSettingsItemChanged, ContextMenuItemType.Plugins);
+
+                SuppressMenuEvents = true;
+                EnableItem.Checked = Settings.Enabled;
+                SettingsItem.Checked = false;
+                SuppressMenuEvents = false;
+
+                Initialized = true;
+            }
+            catch (Exception)
+            {
+                // 拡張機能の準備がまだ終わっていない。次の Tick などで再挑戦する。
+                SuppressMenuEvents = false;
             }
         }
 
         public override void Dispose()
         {
-            Native.Started -= OnStarted;
-            BveHacker.ScenarioCreated -= OnScenarioCreated;
+            if (ScenarioEventSubscribed)
+            {
+                try { BveHacker.ScenarioCreated -= OnScenarioCreated; } catch (Exception) { }
+            }
 
-            ClearPanel();
+            if (Native != null)
+            {
+                try { Native.Started -= OnStarted; } catch (Exception) { }
+                try { ClearPanel(); } catch (Exception) { }
+            }
+
             DisposeSounds();
 
             Form.FormClosing -= OnFormClosing;
             Form.Close();
             Form.Dispose();
 
-            EnableItem.Dispose();
-            SettingsItem.Dispose();
+            EnableItem?.Dispose();
+            SettingsItem?.Dispose();
         }
 
         // ------------------------------------------------------------------
@@ -115,7 +151,9 @@ namespace BveDelayEx
 
         private void OnScenarioCreated(ScenarioCreatedEventArgs e)
         {
-            PrepareScenario(e.Scenario);
+            // シナリオが作られた時点では、他の拡張機能は取得できるはず。
+            // シナリオごとの準備は、Tick で新しいシナリオを検出して行う。
+            EnsureInitialized();
         }
 
         /// <summary>シナリオ開始直後と駅ジャンプ時に呼ばれる。</summary>
@@ -246,7 +284,19 @@ namespace BveDelayEx
 
         public override void Tick(TimeSpan elapsed)
         {
-            if (!BveHacker.IsScenarioCreated) return;
+            if (!Initialized) EnsureInitialized();
+            if (!Initialized || !BveHacker.IsScenarioCreated) return;
+
+            Scenario scenario = BveHacker.Scenario;
+
+            // 新しいシナリオ（読み込み直し・やり直しを含む）を検出したら準備し直す
+            object source = scenario.Src;
+            if (!ReferenceEquals(source, KnownScenarioSource))
+            {
+                KnownScenarioSource = source;
+                PrepareScenario(scenario);
+                Replan();
+            }
 
             if (!Settings.Enabled)
             {
@@ -254,7 +304,6 @@ namespace BveDelayEx
                 return;
             }
 
-            Scenario scenario = BveHacker.Scenario;
             double location = scenario.VehicleLocation.Location;
             double speed = Math.Abs(scenario.VehicleLocation.Speed); // m/s
             int now = scenario.TimeManager.TimeMilliseconds;
