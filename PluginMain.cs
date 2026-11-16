@@ -57,10 +57,13 @@ namespace BveDelayEx
         private bool ScenarioEventSubscribed;
         private object KnownScenarioSource;
 
+        private readonly Sound[] StartSounds = new Sound[Incidents.All.Length];
         private readonly Sound[] AnnounceSounds = new Sound[Incidents.All.Length];
         private Sound ResumeSound;
         private VehiclePanelElement CrackElement;
         private bool CrackVisible;
+        private VehiclePanelElement[] BannerElements = new VehiclePanelElement[Incidents.All.Length];
+        private int VisibleBanner = -1;
 
         private List<PlannedIncident> Plan = new List<PlannedIncident>();
         private PlannedIncident Active;
@@ -192,6 +195,31 @@ namespace BveDelayEx
                 CrackElement = null; // 窓割れ画像が使えなくても、他の動作は続ける
             }
 
+            // 事故の内容を知らせるバナー（banner_0.png ～ banner_8.png）
+            VisibleBanner = -1;
+            BannerElements = new VehiclePanelElement[Incidents.All.Length];
+            for (int i = 0; i < BannerElements.Length; i++)
+            {
+                try
+                {
+                    string bannerPath = Path.Combine(PluginDirectory, $"banner_{i}.png");
+                    if (!File.Exists(bannerPath)) continue;
+
+                    VehiclePanelElement banner = new VehiclePanelElement()
+                    {
+                        DaytimeImagePath = bannerPath,
+                    };
+                    banner.CreateModels();
+                    banner.Matrix = HiddenMatrix;
+                    scenario.Vehicle.Panel.Elements.Add(banner);
+                    BannerElements[i] = banner;
+                }
+                catch (Exception)
+                {
+                    BannerElements[i] = null;
+                }
+            }
+
             LoadSounds();
         }
 
@@ -203,6 +231,12 @@ namespace BveDelayEx
             {
                 ISoundFactory soundFactory = Extensions.GetExtension<ISoundFactory>();
                 string directory = Path.Combine(PluginDirectory, "sounds");
+
+                for (int i = 0; i < StartSounds.Length; i++)
+                {
+                    string startPath = Path.Combine(directory, $"start_{i}.wav");
+                    if (File.Exists(startPath)) StartSounds[i] = soundFactory.LoadFrom(startPath, 1, Sound.SoundPosition.Cab);
+                }
 
                 for (int i = 0; i < AnnounceSounds.Length; i++)
                 {
@@ -221,6 +255,12 @@ namespace BveDelayEx
 
         private void DisposeSounds()
         {
+            for (int i = 0; i < StartSounds.Length; i++)
+            {
+                try { StartSounds[i]?.Dispose(); } catch (Exception) { }
+                StartSounds[i] = null;
+            }
+
             for (int i = 0; i < AnnounceSounds.Length; i++)
             {
                 try { AnnounceSounds[i]?.Dispose(); } catch (Exception) { }
@@ -372,6 +412,7 @@ namespace BveDelayEx
                     Active = p;
                     CurrentPhase = Phase.Braking;
                     BrakingStart = now;
+                    Play(StartSounds[p.Incident.Id]);
                     return;
                 }
             }
@@ -385,6 +426,7 @@ namespace BveDelayEx
             long start = Active.Incident.InStation ? Math.Max(now, Active.DepartureMilliseconds) : now;
             HoldEnd = (int)Math.Min(start + Active.HoldMilliseconds, int.MaxValue);
 
+            if (Active.Incident.InStation) Play(StartSounds[Active.Incident.Id]);
             Play(AnnounceSounds[Active.Incident.Id]);
         }
 
@@ -395,6 +437,7 @@ namespace BveDelayEx
             CurrentPhase = Phase.Idle;
 
             SetCrack(false);
+            SetBanner(-1);
             ClearPanel();
             if (playResume) Play(ResumeSound);
         }
@@ -421,14 +464,16 @@ namespace BveDelayEx
 
         private void UpdatePanel()
         {
-            bool holding = CurrentPhase == Phase.Holding && Active != null;
+            // ブレーキを掛け始めてから運転再開までの間を「発生中」とする
+            bool active = (CurrentPhase == Phase.Braking || CurrentPhase == Phase.Holding) && Active != null;
 
             for (int i = 0; i < Incidents.All.Length; i++)
             {
-                Native.AtsPanelArray[Incidents.PanelBase + i] = holding && Active.Incident.Id == i ? 1 : 0;
+                Native.AtsPanelArray[Incidents.PanelBase + i] = active && Active.Incident.Id == i ? 1 : 0;
             }
 
-            SetCrack(holding && Active.Incident.Id == Incidents.Jinshin);
+            SetCrack(active && Active.Incident.Id == Incidents.Jinshin);
+            SetBanner(active ? Active.Incident.Id : -1);
         }
 
         private void ClearPanel()
@@ -436,6 +481,30 @@ namespace BveDelayEx
             for (int i = 0; i < Incidents.All.Length; i++)
             {
                 Native.AtsPanelArray[Incidents.PanelBase + i] = 0;
+            }
+        }
+
+        /// <summary>事故の内容を知らせるバナーを切り替える。-1 で非表示。</summary>
+        private void SetBanner(int id)
+        {
+            if (id == VisibleBanner) return;
+
+            try
+            {
+                if (VisibleBanner >= 0 && BannerElements[VisibleBanner] != null)
+                {
+                    BannerElements[VisibleBanner].Matrix = HiddenMatrix;
+                }
+
+                if (id >= 0 && BannerElements[id] != null)
+                {
+                    BannerElements[id].Matrix = SlimDX.Matrix.Translation(Settings.BannerX, Settings.BannerY, 0f);
+                }
+
+                VisibleBanner = id;
+            }
+            catch (Exception)
+            {
             }
         }
 
