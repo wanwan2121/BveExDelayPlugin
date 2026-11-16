@@ -41,6 +41,9 @@ namespace BveDelayEx
         private static readonly SlimDX.Matrix HiddenMatrix = SlimDX.Matrix.Translation(0f, 10000f, 0f);
         private static readonly SlimDX.Matrix ShownMatrix = SlimDX.Matrix.Translation(0f, 0f, 0f);
 
+        // 事故内容のバナーを出す位置（パネル座標のピクセル）。ずれるときはここを変える
+        private static readonly SlimDX.Matrix BannerShownMatrix = SlimDX.Matrix.Translation(20f, 20f, 0f);
+
         private readonly string PluginDirectory;
         private readonly string SettingsPath;
         private readonly DelaySettings Settings;
@@ -498,7 +501,7 @@ namespace BveDelayEx
 
                 if (id >= 0 && BannerElements[id] != null)
                 {
-                    BannerElements[id].Matrix = SlimDX.Matrix.Translation(Settings.BannerX, Settings.BannerY, 0f);
+                    BannerElements[id].Matrix = BannerShownMatrix;
                 }
 
                 VisibleBanner = id;
