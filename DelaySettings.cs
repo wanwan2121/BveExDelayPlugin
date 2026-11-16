@@ -24,6 +24,10 @@ namespace BveDelayEx
         public int ProbabilityPercent = 10;
         public int HoldScalePercent = 100;
         public bool ShowPlan = false;
+
+        // 事故内容の表示（バナー）の位置。パネル座標（ピクセル）。ini を直接編集して調整する。
+        public int BannerX = 20;
+        public int BannerY = 20;
         public bool[] IncidentEnabled;
 
         public DelaySettings()
@@ -57,6 +61,8 @@ namespace BveDelayEx
                         case "ProbabilityPercent": s.ProbabilityPercent = ParseInt(value, s.ProbabilityPercent, 1, 100); break;
                         case "HoldScalePercent": s.HoldScalePercent = ParseInt(value, s.HoldScalePercent, 10, 500); break;
                         case "ShowPlan": s.ShowPlan = value == "1"; break;
+                        case "BannerX": s.BannerX = ParseInt(value, s.BannerX, -5000, 5000); break;
+                        case "BannerY": s.BannerY = ParseInt(value, s.BannerY, -5000, 5000); break;
                         case "Incidents":
                             for (int i = 0; i < s.IncidentEnabled.Length && i < value.Length; i++)
                             {
@@ -89,6 +95,9 @@ namespace BveDelayEx
                     "ProbabilityPercent=" + ProbabilityPercent.ToString(CultureInfo.InvariantCulture),
                     "HoldScalePercent=" + HoldScalePercent.ToString(CultureInfo.InvariantCulture),
                     "ShowPlan=" + (ShowPlan ? "1" : "0"),
+                    "; 事故内容の表示（banner_*.png）の位置。パネル座標（ピクセル）",
+                    "BannerX=" + BannerX.ToString(CultureInfo.InvariantCulture),
+                    "BannerY=" + BannerY.ToString(CultureInfo.InvariantCulture),
                     "; 事故の種類（並び順は 人身事故, 沿線火災, 車両故障, 非常ボタン動作, 踏切支障, 駅火災, 車両火災, 他列車の脱線事故, 動物支障）",
                     "Incidents=" + incidents,
                 };
