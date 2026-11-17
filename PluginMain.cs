@@ -37,6 +37,9 @@ namespace BveDelayEx
         // 駅間停車型でブレーキを掛けてから、この時間（ミリ秒）たっても止まらなければ諦める
         private const int BrakingTimeoutMilliseconds = 180 * 1000;
 
+        // 停車して無線（指令との交信）が流れてから、車内放送が流れるまでの時間（ミリ秒）
+        private const int AnnounceDelayMilliseconds = 12 * 1000;
+
         // 窓割れ画像を隠すとき・出すときの位置（パネル座標）
         private static readonly SlimDX.Matrix HiddenMatrix = SlimDX.Matrix.Translation(0f, 10000f, 0f);
         private static readonly SlimDX.Matrix ShownMatrix = SlimDX.Matrix.Translation(0f, 0f, 0f);
@@ -61,6 +64,7 @@ namespace BveDelayEx
         private object KnownScenarioSource;
 
         private readonly Sound[] StartSounds = new Sound[Incidents.All.Length];
+        private readonly Sound[] RadioSounds = new Sound[Incidents.All.Length];
         private readonly Sound[] AnnounceSounds = new Sound[Incidents.All.Length];
         private Sound ResumeSound;
         private VehiclePanelElement CrackElement;
@@ -73,6 +77,7 @@ namespace BveDelayEx
         private Phase CurrentPhase = Phase.Idle;
         private int HoldEnd;
         private int BrakingStart;
+        private int AnnounceAt;
         private bool SuppressMenuEvents;
 
         public PluginMain(PluginBuilder builder) : base(builder)
@@ -241,6 +246,12 @@ namespace BveDelayEx
                     if (File.Exists(startPath)) StartSounds[i] = soundFactory.LoadFrom(startPath, 1, Sound.SoundPosition.Cab);
                 }
 
+                for (int i = 0; i < RadioSounds.Length; i++)
+                {
+                    string radioPath = Path.Combine(directory, $"radio_{i}.wav");
+                    if (File.Exists(radioPath)) RadioSounds[i] = soundFactory.LoadFrom(radioPath, 1, Sound.SoundPosition.Cab);
+                }
+
                 for (int i = 0; i < AnnounceSounds.Length; i++)
                 {
                     string path = Path.Combine(directory, $"announce_{i}.wav");
@@ -262,6 +273,12 @@ namespace BveDelayEx
             {
                 try { StartSounds[i]?.Dispose(); } catch (Exception) { }
                 StartSounds[i] = null;
+            }
+
+            for (int i = 0; i < RadioSounds.Length; i++)
+            {
+                try { RadioSounds[i]?.Dispose(); } catch (Exception) { }
+                RadioSounds[i] = null;
             }
 
             for (int i = 0; i < AnnounceSounds.Length; i++)
@@ -371,6 +388,12 @@ namespace BveDelayEx
 
                 case Phase.Holding:
                     ApplyBrake(scenario);
+                    if (AnnounceAt != 0 && now >= AnnounceAt)
+                    {
+                        AnnounceAt = 0;
+                        Play(AnnounceSounds[Active.Incident.Id]);
+                    }
+
                     if (now >= HoldEnd) EndIncident(true);
                     break;
             }
@@ -430,7 +453,8 @@ namespace BveDelayEx
             HoldEnd = (int)Math.Min(start + Active.HoldMilliseconds, int.MaxValue);
 
             if (Active.Incident.InStation) Play(StartSounds[Active.Incident.Id]);
-            Play(AnnounceSounds[Active.Incident.Id]);
+            Play(RadioSounds[Active.Incident.Id]);
+            AnnounceAt = now + AnnounceDelayMilliseconds;
         }
 
         private void EndIncident(bool playResume)
@@ -438,6 +462,7 @@ namespace BveDelayEx
             if (Active != null) Active.Finished = true;
             Active = null;
             CurrentPhase = Phase.Idle;
+            AnnounceAt = 0;
 
             SetCrack(false);
             SetBanner(-1);
