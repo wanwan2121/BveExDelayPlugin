@@ -63,14 +63,13 @@ namespace BveDelayEx
         private bool ScenarioEventSubscribed;
         private object KnownScenarioSource;
 
-        private readonly Sound[] StartSounds = new Sound[Incidents.All.Length];
-        private readonly Sound[] RadioSounds = new Sound[Incidents.All.Length];
-        private readonly Sound[] AnnounceSounds = new Sound[Incidents.All.Length];
+        // キーは "start_8_2" のような名前（ファイル名から拡張子を除いたもの）
+        private readonly Dictionary<string, Sound> Sounds = new Dictionary<string, Sound>();
         private Sound ResumeSound;
         private VehiclePanelElement CrackElement;
         private bool CrackVisible;
-        private VehiclePanelElement[] BannerElements = new VehiclePanelElement[Incidents.All.Length];
-        private int VisibleBanner = -1;
+        private Dictionary<string, VehiclePanelElement> Banners = new Dictionary<string, VehiclePanelElement>();
+        private string VisibleBannerKey;
 
         private List<PlannedIncident> Plan = new List<PlannedIncident>();
         private PlannedIncident Active;
@@ -203,14 +202,14 @@ namespace BveDelayEx
                 CrackElement = null; // 窓割れ画像が使えなくても、他の動作は続ける
             }
 
-            // 事故の内容を知らせるバナー（banner_0.png ～ banner_8.png）
-            VisibleBanner = -1;
-            BannerElements = new VehiclePanelElement[Incidents.All.Length];
-            for (int i = 0; i < BannerElements.Length; i++)
+            // 事故の内容を知らせるバナー（banner_0.png、動物支障なら banner_8_0.png ～ など）
+            VisibleBannerKey = null;
+            Banners = new Dictionary<string, VehiclePanelElement>();
+            foreach (string key in AllKeys("banner"))
             {
                 try
                 {
-                    string bannerPath = Path.Combine(PluginDirectory, $"banner_{i}.png");
+                    string bannerPath = Path.Combine(PluginDirectory, key + ".png");
                     if (!File.Exists(bannerPath)) continue;
 
                     VehiclePanelElement banner = new VehiclePanelElement()
@@ -220,11 +219,11 @@ namespace BveDelayEx
                     banner.CreateModels();
                     banner.Matrix = HiddenMatrix;
                     scenario.Vehicle.Panel.Elements.Add(banner);
-                    BannerElements[i] = banner;
+                    Banners[key] = banner;
                 }
                 catch (Exception)
                 {
-                    BannerElements[i] = null;
+                    // このバナーだけ使えなくても、他の動作は続ける
                 }
             }
 
@@ -240,22 +239,13 @@ namespace BveDelayEx
                 ISoundFactory soundFactory = Extensions.GetExtension<ISoundFactory>();
                 string directory = Path.Combine(PluginDirectory, "sounds");
 
-                for (int i = 0; i < StartSounds.Length; i++)
+                foreach (string kind in new[] { "start", "radio", "announce" })
                 {
-                    string startPath = Path.Combine(directory, $"start_{i}.wav");
-                    if (File.Exists(startPath)) StartSounds[i] = soundFactory.LoadFrom(startPath, 1, Sound.SoundPosition.Cab);
-                }
-
-                for (int i = 0; i < RadioSounds.Length; i++)
-                {
-                    string radioPath = Path.Combine(directory, $"radio_{i}.wav");
-                    if (File.Exists(radioPath)) RadioSounds[i] = soundFactory.LoadFrom(radioPath, 1, Sound.SoundPosition.Cab);
-                }
-
-                for (int i = 0; i < AnnounceSounds.Length; i++)
-                {
-                    string path = Path.Combine(directory, $"announce_{i}.wav");
-                    if (File.Exists(path)) AnnounceSounds[i] = soundFactory.LoadFrom(path, 1, Sound.SoundPosition.Cab);
+                    foreach (string key in AllKeys(kind))
+                    {
+                        string path = Path.Combine(directory, key + ".wav");
+                        if (File.Exists(path)) Sounds[key] = soundFactory.LoadFrom(path, 1, Sound.SoundPosition.Cab);
+                    }
                 }
 
                 string resumePath = Path.Combine(directory, "resume.wav");
@@ -269,23 +259,12 @@ namespace BveDelayEx
 
         private void DisposeSounds()
         {
-            for (int i = 0; i < StartSounds.Length; i++)
+            foreach (Sound sound in Sounds.Values)
             {
-                try { StartSounds[i]?.Dispose(); } catch (Exception) { }
-                StartSounds[i] = null;
+                try { sound?.Dispose(); } catch (Exception) { }
             }
 
-            for (int i = 0; i < RadioSounds.Length; i++)
-            {
-                try { RadioSounds[i]?.Dispose(); } catch (Exception) { }
-                RadioSounds[i] = null;
-            }
-
-            for (int i = 0; i < AnnounceSounds.Length; i++)
-            {
-                try { AnnounceSounds[i]?.Dispose(); } catch (Exception) { }
-                AnnounceSounds[i] = null;
-            }
+            Sounds.Clear();
 
             try { ResumeSound?.Dispose(); } catch (Exception) { }
             ResumeSound = null;
@@ -331,7 +310,7 @@ namespace BveDelayEx
                 foreach (PlannedIncident p in Plan)
                 {
                     string kind = p.Incident.InStation ? "駅構内" : "駅間停車";
-                    text.AppendLine($"{p.StationIndex + 1} 駅目（{p.StationLocation:F0} m）：{p.Incident.Name}［{kind}・{p.HoldMilliseconds / 1000} 秒］");
+                    text.AppendLine($"{p.StationIndex + 1} 駅目（{p.StationLocation:F0} m）：{p.Incident.DisplayName(p.Variant)}［{kind}・{p.HoldMilliseconds / 1000} 秒］");
                 }
             }
 
@@ -391,7 +370,7 @@ namespace BveDelayEx
                     if (AnnounceAt != 0 && now >= AnnounceAt)
                     {
                         AnnounceAt = 0;
-                        Play(AnnounceSounds[Active.Incident.Id]);
+                        Play(FindSound("announce", Active));
                     }
 
                     if (now >= HoldEnd) EndIncident(true);
@@ -438,7 +417,7 @@ namespace BveDelayEx
                     Active = p;
                     CurrentPhase = Phase.Braking;
                     BrakingStart = now;
-                    Play(StartSounds[p.Incident.Id]);
+                    Play(FindSound("start", p));
                     return;
                 }
             }
@@ -452,8 +431,8 @@ namespace BveDelayEx
             long start = Active.Incident.InStation ? Math.Max(now, Active.DepartureMilliseconds) : now;
             HoldEnd = (int)Math.Min(start + Active.HoldMilliseconds, int.MaxValue);
 
-            if (Active.Incident.InStation) Play(StartSounds[Active.Incident.Id]);
-            Play(RadioSounds[Active.Incident.Id]);
+            if (Active.Incident.InStation) Play(FindSound("start", Active));
+            Play(FindSound("radio", Active));
             AnnounceAt = now + AnnounceDelayMilliseconds;
         }
 
@@ -465,7 +444,7 @@ namespace BveDelayEx
             AnnounceAt = 0;
 
             SetCrack(false);
-            SetBanner(-1);
+            SetBanner(null);
             ClearPanel();
             if (playResume) Play(ResumeSound);
         }
@@ -501,7 +480,7 @@ namespace BveDelayEx
             }
 
             SetCrack(active && Active.Incident.Id == Incidents.Jinshin);
-            SetBanner(active ? Active.Incident.Id : -1);
+            SetBanner(active ? Active : null);
         }
 
         private void ClearPanel()
@@ -512,28 +491,59 @@ namespace BveDelayEx
             }
         }
 
-        /// <summary>事故の内容を知らせるバナーを切り替える。-1 で非表示。</summary>
-        private void SetBanner(int id)
+        /// <summary>事故の内容を知らせるバナーを切り替える。null で非表示。</summary>
+        private void SetBanner(PlannedIncident planned)
         {
-            if (id == VisibleBanner) return;
+            string key = null;
+            if (planned != null)
+            {
+                key = $"banner_{planned.Incident.Id}";
+                string variantKey = $"banner_{planned.Incident.Id}_{planned.Variant}";
+                if (planned.Incident.VariantCount > 1 && Banners.ContainsKey(variantKey)) key = variantKey;
+            }
+
+            if (key == VisibleBannerKey) return;
 
             try
             {
-                if (VisibleBanner >= 0 && BannerElements[VisibleBanner] != null)
+                VehiclePanelElement element;
+                if (VisibleBannerKey != null && Banners.TryGetValue(VisibleBannerKey, out element))
                 {
-                    BannerElements[VisibleBanner].Matrix = HiddenMatrix;
+                    element.Matrix = HiddenMatrix;
                 }
 
-                if (id >= 0 && BannerElements[id] != null)
+                if (key != null && Banners.TryGetValue(key, out element))
                 {
-                    BannerElements[id].Matrix = BannerShownMatrix;
+                    element.Matrix = BannerShownMatrix;
                 }
 
-                VisibleBanner = id;
+                VisibleBannerKey = key;
             }
             catch (Exception)
             {
             }
+        }
+
+        /// <summary>音・バナーのファイル名に使うキーを全て列挙する。</summary>
+        private static IEnumerable<string> AllKeys(string kind)
+        {
+            foreach (IncidentDef incident in Incidents.All)
+            {
+                yield return $"{kind}_{incident.Id}";
+
+                if (incident.VariantCount > 1)
+                {
+                    for (int v = 0; v < incident.VariantCount; v++) yield return $"{kind}_{incident.Id}_{v}";
+                }
+            }
+        }
+
+        /// <summary>種類ごとの音（radio_8_2 など）があればそれを、無ければ共通の音（radio_8）を返す。</summary>
+        private Sound FindSound(string kind, PlannedIncident planned)
+        {
+            Sound sound;
+            if (planned.Incident.VariantCount > 1 && Sounds.TryGetValue($"{kind}_{planned.Incident.Id}_{planned.Variant}", out sound)) return sound;
+            return Sounds.TryGetValue($"{kind}_{planned.Incident.Id}", out sound) ? sound : null;
         }
 
         private void SetCrack(bool show)
