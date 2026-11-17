@@ -26,6 +26,9 @@ namespace BveDelayEx
         public int DepartureMilliseconds;
         public IncidentDef Incident;
 
+        /// <summary>事故の中での種類（動物支障ならどの動物か）。0 から始まる。</summary>
+        public int Variant;
+
         /// <summary>停車保持時間（ミリ秒）</summary>
         public int HoldMilliseconds;
 
@@ -104,6 +107,7 @@ namespace BveDelayEx
                     TriggerLocation = c.Trigger,
                     DepartureMilliseconds = c.Station.DepartureMilliseconds,
                     Incident = incident,
+                    Variant = incident.VariantCount > 1 ? rng.Next(incident.VariantCount) : 0,
                     HoldMilliseconds = holdMs,
                 });
             }
