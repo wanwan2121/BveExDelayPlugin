@@ -22,8 +22,21 @@ namespace BveDelayEx
         public int HoldMinSec { get; }
         public int HoldMaxSec { get; }
 
-        public IncidentDef(int id, string name, bool inStation, bool emergency, int weight, int holdMinSec, int holdMaxSec)
+        /// <summary>同じ事故の中でのランダムな種類（動物支障の動物など）。無ければ null。</summary>
+        public string[] Variants { get; }
+
+        public int VariantCount => Variants == null ? 1 : Variants.Length;
+
+        /// <summary>設定画面や予定表示に使う名前。種類があれば「動物支障（シカ）」のようにする。</summary>
+        public string DisplayName(int variant)
         {
+            if (Variants == null || variant < 0 || variant >= Variants.Length) return Name;
+            return Name + "（" + Variants[variant] + "）";
+        }
+
+        public IncidentDef(int id, string name, bool inStation, bool emergency, int weight, int holdMinSec, int holdMaxSec, string[] variants = null)
+        {
+            Variants = variants;
             Id = id;
             Name = name;
             InStation = inStation;
@@ -54,7 +67,7 @@ namespace BveDelayEx
             new IncidentDef(5, "駅火災",             true,  false,  5, 240, 480),
             new IncidentDef(6, "車両火災",           true,  false,  5, 240, 480),
             new IncidentDef(7, "他列車の脱線事故",   false, false,  3, 300, 600),
-            new IncidentDef(8, "動物支障",           false, true,  19,  60, 150),
+            new IncidentDef(8, "動物支障",           false, true,  19,  60, 150, new[] { "シカ", "イノシシ", "サル", "クマ", "ライオン" }),
         };
     }
 }
